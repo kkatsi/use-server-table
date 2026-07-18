@@ -1,0 +1,78 @@
+{
+  "name": "use-server-table",
+  "version": "0.0.1",
+  "description": "Headless React hook for server-side table state — pagination, sorting, debounced search, and URL sync. Zero UI, zero framework. Optional TanStack Table adapter.",
+  "keywords": [
+    "react",
+    "hook",
+    "table",
+    "headless",
+    "server-side",
+    "pagination",
+    "sorting",
+    "search",
+    "url-state",
+    "tanstack-table"
+  ],
+  "author": "Kostas Katsinaris",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kostaskatsinaris/use-server-table.git"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist"],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./tanstack": {
+      "types": "./dist/tanstack/index.d.ts",
+      "import": "./dist/tanstack/index.js",
+      "require": "./dist/tanstack/index.cjs"
+    }
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "format:check": "biome format .",
+    "format:write": "biome format --write .",
+    "check": "biome check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc --noEmit && vite build",
+    "prepublishOnly": "npm run check && npm run test && npm run build"
+  },
+  "peerDependencies": {
+    "@tanstack/react-table": ">=8",
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "@tanstack/react-table": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@tanstack/react-table": "^8.20.5",
+    "@testing-library/react": "^16.1.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^25.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vite-plugin-dts": "^4.3.0",
+    "vitest": "^3.0.0"
+  }
+}
