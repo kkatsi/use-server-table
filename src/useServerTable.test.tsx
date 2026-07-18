@@ -5,7 +5,10 @@ import { useServerTable } from './useServerTable';
 const SEARCH_TEST_STRING = 'my test search';
 
 beforeEach(() => vi.useFakeTimers());
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  window.history.replaceState({}, '', '/');
+});
 
 describe('useServerTable', () => {
   it('exports a hook', () => {
@@ -64,7 +67,7 @@ describe('useServerTable', () => {
     expect(result.current.limit).toBe(30);
     expect(result.current.offset).toBe(0);
   });
-  it.todo('toggleSort cycles asc → desc → none and resets offset', () => {
+  it('toggleSort cycles asc → desc → none and resets offset', () => {
     const { result } = renderHook(() => useServerTable());
 
     act(() => {
@@ -108,19 +111,105 @@ describe('useServerTable', () => {
     expect(result.current.canPreviousPage).toBeTruthy();
     expect(result.current.canNextPage).toBeFalsy();
   });
-  it.todo(
-    'setTotal clamps offset when the result set shrinks below the current page',
-  );
-  it.todo('setPageIndex clamps to [0, pageCount)');
-  it.todo(
-    'queryKey is referentially stable while committed state is unchanged',
-  );
-  it.todo('queryParams omits search/sort keys when empty');
-  it.todo('syncToUrl reads initial state from location.search on mount');
-  it.todo(
-    'syncToUrl writes committed changes via replaceState, not transient input',
-  );
-  it.todo('urlParamPrefix namespaces params so two tables can share a page');
-  it.todo('reset returns state to defaults');
+  it('setTotal clamps offset when the result set shrinks below the current page', () => {
+    const { result } = renderHook(() => useServerTable());
+
+    act(() => {
+      result.current.setTotal({ type: 'pages', value: 5 });
+      result.current.setOffset(80);
+      result.current.setTotal({ type: 'pages', value: 2 });
+    });
+    expect(result.current.offset).toBe(20);
+  });
+  it('setPageIndex clamps to [0, pageCount)', () => {
+    const { result } = renderHook(() => useServerTable());
+
+    act(() => {
+      result.current.setTotal({ type: 'pages', value: 5 });
+    });
+
+    act(() => {
+      result.current.setPageIndex(-1);
+    });
+    expect(result.current.pageIndex).toBe(1);
+
+    act(() => {
+      result.current.setPageIndex(6);
+    });
+
+    expect(result.current.pageIndex).toBe(5);
+  });
+  it('queryKey is referentially stable while committed state is unchanged', () => {
+    const { result, rerender } = renderHook(() => useServerTable());
+
+    const first = result.current.queryKey;
+
+    rerender();
+    expect(result.current.queryKey).toBe(first);
+
+    act(() => {
+      result.current.setTotal({ type: 'pages', value: 5 });
+    });
+    expect(result.current.queryKey).toBe(first);
+
+    act(() => {
+      result.current.setSort({ id: 'name', direction: 'asc' });
+    });
+    expect(result.current.queryKey).not.toBe(first);
+  });
+  it('queryParams omits search/sort keys when empty', () => {
+    window.history.replaceState({}, '', '?limit=50&offset=20');
+    const { result } = renderHook(() => useServerTable());
+
+    expect(result.current.queryParams).toEqual({ limit: 50, offset: 20 });
+  });
+  it('syncToUrl reads initial state from location.search on mount', () => {
+    window.history.replaceState({}, '', '?limit=50&offset=20');
+    const { result } = renderHook(() => useServerTable({ syncToUrl: true }));
+    expect(result.current.limit).toBe(50);
+    expect(result.current.offset).toBe(20);
+  });
+  it('syncToUrl writes committed changes via replaceState, not transient input', () => {
+    const spy = vi.spyOn(window.history, 'replaceState');
+    const { result } = renderHook(() => useServerTable({ syncToUrl: true }));
+
+    act(() => result.current.setSearch('foo'));
+    expect(spy).not.toHaveBeenCalled();
+
+    act(() => vi.advanceTimersByTime(350));
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(window.location.search).toContain('search=foo');
+
+    spy.mockRestore();
+  });
+  it('urlParamPrefix namespaces params so two tables can share a page', () => {
+    const { result: firstResult } = renderHook(() =>
+      useServerTable({ syncToUrl: true, urlParamPrefix: 'first_' }),
+    );
+    const { result: secondResult } = renderHook(() =>
+      useServerTable({ syncToUrl: true, urlParamPrefix: 'second_' }),
+    );
+
+    act(() => {
+      firstResult.current.setLimit(40);
+      secondResult.current.setLimit(50);
+    });
+
+    expect(window.location.search).toContain('first_limit=40');
+    expect(window.location.search).toContain('second_limit=50');
+  });
+  it('reset returns state to defaults', () => {
+    const { result } = renderHook(() => useServerTable());
+
+    act(() => {
+      result.current.setLimit(50);
+    });
+    expect(result.current.limit).toBe(50);
+
+    act(() => {
+      result.current.reset();
+    });
+    expect(result.current.limit).toBe(20);
+  });
   it.todo('unmount cancels the pending search debounce');
 });

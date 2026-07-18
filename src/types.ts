@@ -73,7 +73,7 @@ export type UseServerTableReturn = {
    * Stable, serializable snapshot for cache keys:
    *   useQuery({ queryKey: ['users', table.queryKey], ... })
    */
-  queryKey: ServerTableState;
+  queryKey: Omit<ServerTableState, 'searchInput'>;
   /**
    * Ready-to-send params: { offset, limit, search?, sortBy?, sortDir? }.
    * Spread into your fetcher.

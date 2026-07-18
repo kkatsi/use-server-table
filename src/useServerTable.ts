@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { debounce } from './lib/debounce';
 import type {
   ServerTableState,
@@ -28,12 +28,13 @@ type ReducerAction =
   | { type: 'sort'; sort: SortState | null }
   | { type: 'limit'; value: number }
   | { type: 'offset'; value: number }
-  | { type: 'total'; value: Total };
+  | { type: 'total'; value: Total }
+  | { type: 'reset'; state: ServerTableState & { total: Total } };
 
 const reducer = (
   state: ServerTableState & { total: Total },
   action: ReducerAction,
-) => {
+): ServerTableState & { total: Total } => {
   switch (action.type) {
     case 'offset': {
       const { type, value } = state.total;
@@ -53,27 +54,39 @@ const reducer = (
     case 'sort':
       return { ...state, sort: action.sort, offset: 0 };
     case 'total':
-      return { ...state, total: action.value, offset: 0 };
+      const { type, value } = action.value;
+      let currentOffset = state.offset;
+      const totalItems = type === 'items' ? value : state.limit * value;
+      const maxOffset = Math.max(0, totalItems - state.limit);
+      return {
+        ...state,
+        total: action.value,
+        offset: currentOffset > maxOffset ? maxOffset : currentOffset,
+      };
+    case 'reset':
+      return action.state;
   }
 };
 
-const parseParams = (params: URLSearchParams) => {
-  const limit = params.get('limit');
-  const offset = params.get('offset');
-  const search = params.get('search');
-  const sortBy = params.get('sortBy');
-  const sortDir = params.get('sortDir');
+const parseParams = (
+  params: URLSearchParams,
+  qsParamNames: Record<
+    'limit' | 'offset' | 'search' | 'sortBy' | 'sortDir',
+    string
+  >,
+) => {
+  const limit = params.get(qsParamNames.limit);
+  const offset = params.get(qsParamNames.offset);
+  const search = params.get(qsParamNames.search);
+  const sortBy = params.get(qsParamNames.sortBy);
+  const sortDir = params.get(qsParamNames.sortDir);
   return {
     limit: typeof limit !== 'string' ? 20 : parseInt(limit, 10),
     offset: typeof offset !== 'string' ? 0 : parseInt(offset, 10),
-    search: typeof search !== 'string' ? '' : search,
-    sortBy: typeof sortBy !== 'string' ? undefined : sortBy,
-    sortDir:
-      typeof sortDir !== 'string' ? undefined : (sortDir as SortDirection),
-  } satisfies Pick<ServerTableState, 'offset' | 'limit' | 'search'> & {
-    sortBy?: string | undefined;
-    sortDir?: SortDirection | undefined;
-  };
+    ...(typeof search === 'string' && { search }),
+    ...(typeof sortBy === 'string' && { sortBy }),
+    ...(typeof sortDir === 'string' && { sortDir: sortDir as SortDirection }),
+  } satisfies UseServerTableReturn['queryParams'];
 };
 
 const getNextState = (currentState: SortDirection | null) => {
@@ -90,8 +103,25 @@ const getNextState = (currentState: SortDirection | null) => {
 export function useServerTable(
   _options: UseServerTableOptions = {},
 ): UseServerTableReturn {
+  const qsParamNames = {
+    limit: _options.urlParamPrefix
+      ? `${_options.urlParamPrefix}limit`
+      : 'limit',
+    offset: _options.urlParamPrefix
+      ? `${_options.urlParamPrefix}offset`
+      : 'offset',
+    search: _options.urlParamPrefix
+      ? `${_options.urlParamPrefix}search`
+      : 'search',
+    sortBy: _options.urlParamPrefix
+      ? `${_options.urlParamPrefix}sortBy`
+      : 'sortBy',
+    sortDir: _options.urlParamPrefix
+      ? `${_options.urlParamPrefix}sortDir`
+      : 'sortDir',
+  };
   const urlSearchParams = new URLSearchParams(location.search);
-  const qsParams = parseParams(urlSearchParams);
+  const qsParams = parseParams(urlSearchParams, qsParamNames);
 
   const defaultInitialState = {
     limit: _options.defaultLimit ?? 20,
@@ -104,8 +134,8 @@ export function useServerTable(
   const qsParamsInitialState = {
     limit: qsParams.limit,
     offset: qsParams.offset,
-    search: qsParams.search,
-    searchInput: qsParams.search,
+    search: qsParams.search ?? '',
+    searchInput: qsParams.search ?? '',
     sort:
       qsParams.sortBy && qsParams.sortDir
         ? { id: qsParams.sortBy, direction: qsParams.sortDir }
@@ -123,28 +153,31 @@ export function useServerTable(
     state.total.type === 'items'
       ? Math.ceil(state.total.value / state.limit)
       : state.total.value;
-  const currentPage = Math.ceil(state.offset / state.limit + 1);
-  const canNextPage = pageCount > currentPage;
-  const canPreviousPage = currentPage > 1;
+  const pageIndex = Math.ceil(state.offset / state.limit + 1);
+  const canNextPage = pageCount > pageIndex;
+  const canPreviousPage = pageIndex > 1;
+
+  const queryKey = useMemo(() => {
+    const { total, searchInput, ...rest } = state;
+    return rest;
+  }, [state.limit, state.offset, state.search, state.sort]);
 
   const setLimit = (limit: ServerTableState['limit']) => {
     dispatch({ type: 'limit', value: limit });
-    urlSearchParams.set('limit', limit.toString());
   };
   const setOffset = (offset: ServerTableState['offset']) => {
     dispatch({ type: 'offset', value: offset });
-    urlSearchParams.set('offset', offset.toString());
   };
   const setSearchInput = (value: ServerTableState['searchInput']) =>
     dispatch({ type: 'searchInput', value });
   const setSort = (sort: ServerTableState['sort']) => {
     dispatch({ type: 'sort', sort });
-    if (sort?.id) urlSearchParams.set('sortBy', sort.id);
-    if (sort?.direction) urlSearchParams.set('sortDir', sort.direction);
   };
-  const setTotal = (value: Total) => dispatch({ type: 'total', value });
+  const setTotal = (value: Total) => {
+    dispatch({ type: 'total', value });
+  };
   const setPageIndex = (index: number) => {
-    dispatch({ type: 'offset', value: (index - 1) * state.limit });
+    dispatch({ type: 'offset', value: Math.max(0, index - 1) * state.limit });
   };
 
   const toggleSort = (id: string) => {
@@ -153,10 +186,11 @@ export function useServerTable(
     setSort(next ? { id, direction: next } : null);
   };
 
+  const reset = () => dispatch({ type: 'reset', state: initialState });
+
   const setSearchDebounced = useCallback(
     debounce(() => {
       dispatch({ type: 'search', value: state.searchInput });
-      urlSearchParams.set('search', state.searchInput);
     }, 350),
     [state.searchInput],
   );
@@ -165,6 +199,24 @@ export function useServerTable(
     setSearchDebounced();
     return setSearchDebounced.cancel;
   }, [state.searchInput, setSearchDebounced]);
+
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!_options.syncToUrl) return;
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    const params = new URLSearchParams(location.search);
+    params.set(qsParamNames.limit, String(state.limit));
+    params.set(qsParamNames.offset, String(state.offset));
+    if (state.search) params.set(qsParamNames.search, state.search);
+    if (state.sort) {
+      params.set(qsParamNames.sortBy, state.sort.id);
+      params.set(qsParamNames.sortDir, state.sort.direction);
+    }
+    history.replaceState(null, '', `?${params}`);
+  }, [state.limit, state.offset, state.search, state.sort]);
 
   return {
     setOffset,
@@ -177,6 +229,10 @@ export function useServerTable(
     pageCount,
     canNextPage,
     canPreviousPage,
+    pageIndex,
+    queryKey,
+    queryParams: qsParams,
+    reset,
     ...state,
   };
   throw new Error('useServerTable: not implemented yet');
