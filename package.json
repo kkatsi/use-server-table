@@ -1,6 +1,6 @@
 {
   "name": "use-server-table",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Headless React hook for server-side table state — pagination, sorting, debounced search, and URL sync. Zero UI, zero framework. Optional TanStack Table adapter.",
   "keywords": [
     "react",
