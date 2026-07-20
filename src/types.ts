@@ -45,7 +45,7 @@ export type UseServerTableOptions = {
   /** Prefix for URL params to avoid collisions when two tables share a page */
   urlParamPrefix?: string;
   /** Called whenever committed state changes — an escape hatch for imperative fetchers */
-  onStateChange?: (state: ServerTableState) => void;
+  onStateChange?: (state: Omit<ServerTableState, 'searchInput'>) => void;
 };
 
 export interface Total {
@@ -66,7 +66,7 @@ export type UseServerTableReturn = {
   pageIndex: number;
   /** Derived from the total you report via setTotal. 0 until known. */
   pageCount: number;
-  totalItems: number;
+  total: Total;
   canPreviousPage: boolean;
   canNextPage: boolean;
   /**
