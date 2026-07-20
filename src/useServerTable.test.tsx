@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_SEARCH_TIMEOUT_MS } from './constants';
 import { useServerTable } from './useServerTable';
 
 const SEARCH_TEST_STRING = 'my test search';
@@ -158,10 +159,16 @@ describe('useServerTable', () => {
     expect(result.current.queryKey).not.toBe(first);
   });
   it('queryParams omits search/sort keys when empty', () => {
-    window.history.replaceState({}, '', '?limit=50&offset=20');
     const { result } = renderHook(() => useServerTable());
 
-    expect(result.current.queryParams).toEqual({ limit: 50, offset: 20 });
+    act(() => {
+      result.current.setLimit(50);
+    });
+    expect(result.current.queryParams.limit).toBe(50);
+
+    expect(result.current.queryParams).not.toHaveProperty('sortBy');
+    expect(result.current.queryParams).not.toHaveProperty('sortDir');
+    expect(result.current.queryParams).not.toHaveProperty('search');
   });
   it('syncToUrl reads initial state from location.search on mount', () => {
     window.history.replaceState({}, '', '?limit=50&offset=20');
@@ -173,12 +180,12 @@ describe('useServerTable', () => {
     const spy = vi.spyOn(window.history, 'replaceState');
     const { result } = renderHook(() => useServerTable({ syncToUrl: true }));
 
-    act(() => result.current.setSearch('foo'));
+    act(() => result.current.setSearch(SEARCH_TEST_STRING));
     expect(spy).not.toHaveBeenCalled();
 
     act(() => vi.advanceTimersByTime(350));
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(window.location.search).toContain('search=foo');
+    expect(new URLSearchParams(window.location.search).get('search')).toBe(SEARCH_TEST_STRING);
 
     spy.mockRestore();
   });
@@ -211,5 +218,204 @@ describe('useServerTable', () => {
     });
     expect(result.current.limit).toBe(20);
   });
-  it.todo('unmount cancels the pending search debounce');
+  it('unmount cancels the pending search debounce', () => {
+    const { result, unmount } = renderHook(() => useServerTable());
+
+    act(() => {
+      result.current.setSearch(SEARCH_TEST_STRING);
+    });
+    expect(vi.getTimerCount()).toBe(1);
+
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('queryParams reflects committed state, not the mount URL snapshot', () => {
+    const { result } = renderHook(() => useServerTable());
+
+    act(() => {
+      result.current.setLimit(50);
+    });
+
+    expect(result.current.limit).toBe(50);
+    expect(result.current.queryParams.limit).toBe(50);
+
+    const urlQsParamsSnapshot = new URLSearchParams(location.search);
+    const urlLimit = urlQsParamsSnapshot.get('limit');
+
+    expect(result.current.queryParams.limit.toString()).not.toBe(urlLimit);
+  });
+  it('queryParams is referentially stable while committed state is unchanged', () => {
+    const { result, rerender } = renderHook(() => useServerTable());
+
+    const first = result.current.queryParams;
+
+    rerender();
+    expect(result.current.queryParams).toBe(first);
+
+    act(() => {
+      result.current.setTotal({ type: 'pages', value: 5 });
+    });
+    expect(result.current.queryParams).toBe(first);
+
+    act(() => {
+      result.current.setSort({ id: 'name', direction: 'asc' });
+    });
+    expect(result.current.queryParams).not.toBe(first);
+  });
+  it('nextPage / previousPage step by one page and respect bounds', () => {
+    const { result } = renderHook(() => useServerTable());
+
+    act(() => {
+      result.current.setTotal({ type: 'pages', value: 5 });
+    });
+    expect(result.current.pageCount).toBe(5);
+
+    //current page is 1
+    act(() => {
+      result.current.previousPage();
+    });
+
+    expect(result.current.pageIndex).toBe(1);
+
+    act(() => {
+      result.current.nextPage();
+    });
+
+    expect(result.current.pageIndex).toBe(2);
+
+    act(() => {
+      result.current.previousPage();
+    });
+
+    expect(result.current.pageIndex).toBe(1);
+
+    act(() => {
+      result.current.setPageIndex(5);
+    });
+
+    act(() => {
+      result.current.nextPage();
+    });
+
+    expect(result.current.pageIndex).toBe(5);
+
+    act(() => {
+      result.current.previousPage();
+    });
+
+    expect(result.current.pageIndex).toBe(4);
+  });
+  it('setPageIndex clamps to the last page when out of range', () => {
+    const { result } = renderHook(() => useServerTable());
+
+    act(() => {
+      result.current.setTotal({ type: 'pages', value: 5 });
+    });
+    expect(result.current.pageIndex).toBe(1);
+
+    act(() => {
+      result.current.setPageIndex(-1);
+    });
+
+    expect(result.current.pageIndex).toBe(1);
+
+    act(() => {
+      result.current.setPageIndex(6);
+    });
+
+    expect(result.current.pageIndex).toBe(5);
+  });
+  it('setTotal clamps offset when the result set shrinks', () => {
+    const { result } = renderHook(() => useServerTable());
+
+    act(() => {
+      result.current.setTotal({ type: 'pages', value: 5 });
+      result.current.setPageIndex(5);
+    });
+    expect(result.current.offset).toBe(80);
+
+    act(() => {
+      result.current.setTotal({ type: 'pages', value: 2 });
+    });
+
+    expect(result.current.offset).toBe(20);
+  });
+  it('toggleSort cycles asc → desc → none for a column', () => {
+    const { result } = renderHook(() => useServerTable());
+
+    act(() => {
+      result.current.setTotal({ type: 'pages', value: 10 });
+      result.current.toggleSort('age');
+    });
+
+    expect(result.current.sort).toEqual({ id: 'age', direction: 'asc' });
+
+    act(() => {
+      result.current.toggleSort('age');
+    });
+    expect(result.current.sort).toEqual({ id: 'age', direction: 'desc' });
+
+    act(() => {
+      result.current.toggleSort('age');
+    });
+    expect(result.current.sort).toBeNull();
+
+    act(() => {
+      result.current.toggleSort('age');
+    });
+
+    expect(result.current.sort).toEqual({ id: 'age', direction: 'asc' });
+  });
+  it('searchDebounceMs overrides the default debounce window', () => {
+    const { result } = renderHook(() => useServerTable({ searchDebounceMs: 1000 }));
+
+    act(() => {
+      result.current.setSearch(SEARCH_TEST_STRING);
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(DEFAULT_SEARCH_TIMEOUT_MS);
+    });
+
+    expect(result.current.search).toBe('');
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(result.current.search).toBe(SEARCH_TEST_STRING);
+  });
+  it('total reflects the reported total', () => {
+    const { result } = renderHook(() => useServerTable());
+
+    act(() => result.current.setTotal({ type: 'items', value: 1234 }));
+
+    expect(result.current.total).toEqual({ type: 'items', value: 1234 });
+
+    act(() => result.current.setTotal({ type: 'pages', value: 5 }));
+
+    expect(result.current.total).toEqual({ type: 'pages', value: 5 });
+  });
+  it('onStateChange fires on committed changes only', () => {
+    const onStateChange = vi.fn();
+    const { result } = renderHook(() =>
+      useServerTable({
+        onStateChange,
+      }),
+    );
+
+    onStateChange.mockClear();
+
+    act(() => result.current.setSearch(SEARCH_TEST_STRING));
+    expect(onStateChange).not.toHaveBeenCalled();
+
+    act(() => vi.advanceTimersByTime(500));
+    expect(onStateChange).toHaveBeenCalledTimes(1);
+    expect(onStateChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: SEARCH_TEST_STRING, offset: 0 }),
+    );
+
+    act(() => result.current.setSort({ id: 'name', direction: 'asc' }));
+    expect(onStateChange).toHaveBeenCalledTimes(2);
+  });
 });

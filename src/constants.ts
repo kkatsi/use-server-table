@@ -1,0 +1,1 @@
+export const DEFAULT_SEARCH_TIMEOUT_MS = 300;

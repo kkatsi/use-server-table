@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
-import { debounce } from './lib/debounce';
+import { useEffect, useMemo, useReducer, useRef } from 'react';
+import { DEFAULT_SEARCH_TIMEOUT_MS } from './constants';
 import type {
   ServerTableState,
   SortDirection,
@@ -31,20 +31,22 @@ type ReducerAction =
   | { type: 'total'; value: Total }
   | { type: 'reset'; state: ServerTableState & { total: Total } };
 
+const clampOffset = (offset: number, limit: number, total: Total) => {
+  const items = total.type === 'items' ? total.value : limit * total.value;
+  const maxOffset = Math.max(0, Math.ceil(items / limit) - 1) * limit;
+  return Math.min(Math.max(0, offset), maxOffset);
+};
+
 const reducer = (
   state: ServerTableState & { total: Total },
   action: ReducerAction,
 ): ServerTableState & { total: Total } => {
   switch (action.type) {
-    case 'offset': {
-      const { type, value } = state.total;
-      const totalItems = type === 'items' ? value : state.limit * value;
-      const maxOffset = Math.max(0, totalItems - state.limit);
+    case 'offset':
       return {
         ...state,
-        offset: Math.min(action.value, maxOffset),
+        offset: clampOffset(action.value, state.limit, state.total),
       };
-    }
     case 'limit':
       return { ...state, limit: action.value, offset: 0 };
     case 'search':
@@ -54,14 +56,10 @@ const reducer = (
     case 'sort':
       return { ...state, sort: action.sort, offset: 0 };
     case 'total':
-      const { type, value } = action.value;
-      let currentOffset = state.offset;
-      const totalItems = type === 'items' ? value : state.limit * value;
-      const maxOffset = Math.max(0, totalItems - state.limit);
       return {
         ...state,
         total: action.value,
-        offset: currentOffset > maxOffset ? maxOffset : currentOffset,
+        offset: clampOffset(state.offset, state.limit, action.value),
       };
     case 'reset':
       return action.state;
@@ -70,10 +68,7 @@ const reducer = (
 
 const parseParams = (
   params: URLSearchParams,
-  qsParamNames: Record<
-    'limit' | 'offset' | 'search' | 'sortBy' | 'sortDir',
-    string
-  >,
+  qsParamNames: Record<'limit' | 'offset' | 'search' | 'sortBy' | 'sortDir', string>,
 ) => {
   const limit = params.get(qsParamNames.limit);
   const offset = params.get(qsParamNames.offset);
@@ -81,8 +76,8 @@ const parseParams = (
   const sortBy = params.get(qsParamNames.sortBy);
   const sortDir = params.get(qsParamNames.sortDir);
   return {
-    limit: typeof limit !== 'string' ? 20 : parseInt(limit, 10),
-    offset: typeof offset !== 'string' ? 0 : parseInt(offset, 10),
+    limit: typeof limit !== 'string' ? 20 : Number.parseInt(limit, 10),
+    offset: typeof offset !== 'string' ? 0 : Number.parseInt(offset, 10),
     ...(typeof search === 'string' && { search }),
     ...(typeof sortBy === 'string' && { sortBy }),
     ...(typeof sortDir === 'string' && { sortDir: sortDir as SortDirection }),
@@ -100,28 +95,16 @@ const getNextState = (currentState: SortDirection | null) => {
   }
 };
 
-export function useServerTable(
-  _options: UseServerTableOptions = {},
-): UseServerTableReturn {
+export function useServerTable(_options: UseServerTableOptions = {}): UseServerTableReturn {
   const qsParamNames = {
-    limit: _options.urlParamPrefix
-      ? `${_options.urlParamPrefix}limit`
-      : 'limit',
-    offset: _options.urlParamPrefix
-      ? `${_options.urlParamPrefix}offset`
-      : 'offset',
-    search: _options.urlParamPrefix
-      ? `${_options.urlParamPrefix}search`
-      : 'search',
-    sortBy: _options.urlParamPrefix
-      ? `${_options.urlParamPrefix}sortBy`
-      : 'sortBy',
-    sortDir: _options.urlParamPrefix
-      ? `${_options.urlParamPrefix}sortDir`
-      : 'sortDir',
+    limit: _options.urlParamPrefix ? `${_options.urlParamPrefix}limit` : 'limit',
+    offset: _options.urlParamPrefix ? `${_options.urlParamPrefix}offset` : 'offset',
+    search: _options.urlParamPrefix ? `${_options.urlParamPrefix}search` : 'search',
+    sortBy: _options.urlParamPrefix ? `${_options.urlParamPrefix}sortBy` : 'sortBy',
+    sortDir: _options.urlParamPrefix ? `${_options.urlParamPrefix}sortDir` : 'sortDir',
   };
   const urlSearchParams = new URLSearchParams(location.search);
-  const qsParams = parseParams(urlSearchParams, qsParamNames);
+  const initialQsParams = parseParams(urlSearchParams, qsParamNames);
 
   const defaultInitialState = {
     limit: _options.defaultLimit ?? 20,
@@ -132,13 +115,13 @@ export function useServerTable(
   } satisfies ServerTableState;
 
   const qsParamsInitialState = {
-    limit: qsParams.limit,
-    offset: qsParams.offset,
-    search: qsParams.search ?? '',
-    searchInput: qsParams.search ?? '',
+    limit: initialQsParams.limit,
+    offset: initialQsParams.offset,
+    search: initialQsParams.search ?? '',
+    searchInput: initialQsParams.search ?? '',
     sort:
-      qsParams.sortBy && qsParams.sortDir
-        ? { id: qsParams.sortBy, direction: qsParams.sortDir }
+      initialQsParams.sortBy && initialQsParams.sortDir
+        ? { id: initialQsParams.sortBy, direction: initialQsParams.sortDir }
         : null,
   } satisfies ServerTableState;
 
@@ -149,18 +132,34 @@ export function useServerTable(
 
   const [state, dispatch] = useReducer(reducer, initialState);
 
+  const queryParams = useMemo(
+    () => ({
+      offset: state.offset,
+      limit: state.limit,
+      ...(state.search && { search: state.search }),
+      ...(state.sort && {
+        sortBy: state.sort.id,
+        sortDir: state.sort.direction,
+      }),
+    }),
+    [state.offset, state.limit, state.search, state.sort],
+  );
+
   const pageCount =
-    state.total.type === 'items'
-      ? Math.ceil(state.total.value / state.limit)
-      : state.total.value;
+    state.total.type === 'items' ? Math.ceil(state.total.value / state.limit) : state.total.value;
   const pageIndex = Math.ceil(state.offset / state.limit + 1);
   const canNextPage = pageCount > pageIndex;
   const canPreviousPage = pageIndex > 1;
 
-  const queryKey = useMemo(() => {
-    const { total, searchInput, ...rest } = state;
-    return rest;
-  }, [state.limit, state.offset, state.search, state.sort]);
+  const queryKey = useMemo(
+    () => ({
+      offset: state.offset,
+      limit: state.limit,
+      search: state.search,
+      sort: state.sort,
+    }),
+    [state.offset, state.limit, state.search, state.sort],
+  );
 
   const setLimit = (limit: ServerTableState['limit']) => {
     dispatch({ type: 'limit', value: limit });
@@ -188,17 +187,15 @@ export function useServerTable(
 
   const reset = () => dispatch({ type: 'reset', state: initialState });
 
-  const setSearchDebounced = useCallback(
-    debounce(() => {
-      dispatch({ type: 'search', value: state.searchInput });
-    }, 350),
-    [state.searchInput],
-  );
+  const nextPage = () => setPageIndex(pageIndex + 1);
+  const previousPage = () => setPageIndex(pageIndex - 1);
 
   useEffect(() => {
-    setSearchDebounced();
-    return setSearchDebounced.cancel;
-  }, [state.searchInput, setSearchDebounced]);
+    const id = setTimeout(() => {
+      dispatch({ type: 'search', value: state.searchInput });
+    }, _options.searchDebounceMs ?? DEFAULT_SEARCH_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [state.searchInput, _options.searchDebounceMs]);
 
   const mounted = useRef(false);
   useEffect(() => {
@@ -216,7 +213,29 @@ export function useServerTable(
       params.set(qsParamNames.sortDir, state.sort.direction);
     }
     history.replaceState(null, '', `?${params}`);
-  }, [state.limit, state.offset, state.search, state.sort]);
+  }, [
+    state.limit,
+    state.offset,
+    state.search,
+    state.sort,
+    qsParamNames.limit,
+    qsParamNames.offset,
+    qsParamNames.search,
+    qsParamNames.sortBy,
+    qsParamNames.sortDir,
+    _options.syncToUrl,
+  ]);
+
+  // Committed changes only: deps are the committed fields, so transient
+  // searchInput typing never re-fires.
+  useEffect(() => {
+    _options.onStateChange?.({
+      offset: state.offset,
+      limit: state.limit,
+      search: state.search,
+      sort: state.sort,
+    });
+  }, [state.offset, state.limit, state.search, state.sort, _options.onStateChange]);
 
   return {
     setOffset,
@@ -226,14 +245,15 @@ export function useServerTable(
     setTotal,
     setPageIndex,
     toggleSort,
+    nextPage,
+    previousPage,
     pageCount,
     canNextPage,
     canPreviousPage,
     pageIndex,
     queryKey,
-    queryParams: qsParams,
+    queryParams,
     reset,
     ...state,
   };
-  throw new Error('useServerTable: not implemented yet');
 }
