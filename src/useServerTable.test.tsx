@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SEARCH_TIMEOUT_MS } from './contants';
+import { DEFAULT_SEARCH_TIMEOUT_MS } from './constants';
 import { useServerTable } from './useServerTable';
 
 const SEARCH_TEST_STRING = 'my test search';

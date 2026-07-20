@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef } from 'react';
-import { DEFAULT_SEARCH_TIMEOUT_MS } from './contants';
+import { DEFAULT_SEARCH_TIMEOUT_MS } from './constants';
 import type {
   ServerTableState,
   SortDirection,
