@@ -14,7 +14,7 @@ Every admin panel rebuilds the same glue: hold offset/limit/search/sort, debounc
 
 `use-server-table` is that glue, written once, tested, and headless — it renders nothing and fetches nothing, so it works with any UI (styled-components, Tailwind, shadcn) and any fetcher (TanStack Query, SWR, plain fetch).
 
-## Usage (target API)
+## Usage
 
 ```tsx
 import { useServerTable } from 'use-server-table';
@@ -27,7 +27,9 @@ const { data, isLoading } = useQuery({
   placeholderData: keepPreviousData,
 });
 
-useEffect(() => table.setTotal(data?.total ?? 0), [data?.total]);
+useEffect(() => {
+  if (data) table.setTotal({ type: 'items', value: data.total });
+}, [data]);
 ```
 
 With TanStack Table:
@@ -52,9 +54,8 @@ npm run test         # vitest
 npm run build        # type-check + vite lib build → dist/
 ```
 
-The behavior contract lives in `src/useServerTable.test.tsx` as `it.todo` specs.
+The behavior contract lives in `src/useServerTable.test.tsx` — each spec is a production bug this hook kills.
 
 ## License
 
 MIT © Kostas Katsinaris
-# use-server-table
