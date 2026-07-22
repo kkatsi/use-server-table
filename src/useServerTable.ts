@@ -218,10 +218,16 @@ export function useServerTable(_options: UseServerTableOptions = {}): UseServerT
     const params = new URLSearchParams(location.search);
     params.set(qsParamNames.limit, String(state.limit));
     params.set(qsParamNames.offset, String(state.offset));
+    // Delete-then-set: a projection must drop keys that no longer hold, else a
+    // cleared search / removed sort leaves stale params in the URL.
     if (state.search) params.set(qsParamNames.search, state.search);
+    else params.delete(qsParamNames.search);
     if (state.sort) {
       params.set(qsParamNames.sortBy, state.sort.id);
       params.set(qsParamNames.sortDir, state.sort.direction);
+    } else {
+      params.delete(qsParamNames.sortBy);
+      params.delete(qsParamNames.sortDir);
     }
     history.replaceState(null, '', `?${params}`);
   }, [

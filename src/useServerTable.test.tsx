@@ -189,6 +189,17 @@ describe('useServerTable', () => {
 
     spy.mockRestore();
   });
+  it('syncToUrl drops sortBy/sortDir from the URL when sort clears (URL is a projection)', () => {
+    const { result } = renderHook(() => useServerTable({ syncToUrl: true }));
+
+    act(() => result.current.setSort({ id: 'age', direction: 'asc' }));
+    expect(new URLSearchParams(location.search).get('sortBy')).toBe('age');
+    expect(new URLSearchParams(location.search).get('sortDir')).toBe('asc');
+
+    act(() => result.current.setSort(null));
+    expect(new URLSearchParams(location.search).has('sortBy')).toBe(false);
+    expect(new URLSearchParams(location.search).has('sortDir')).toBe(false);
+  });
   it('urlParamPrefix namespaces params so two tables can share a page', () => {
     const { result: firstResult } = renderHook(() =>
       useServerTable({ syncToUrl: true, urlParamPrefix: 'first_' }),
