@@ -68,10 +68,7 @@ const reducer = (
 
 const parseParams = (
   params: URLSearchParams,
-  qsParamNames: Record<
-    'limit' | 'offset' | 'search' | 'sortBy' | 'sortDir',
-    string
-  >,
+  qsParamNames: Record<'limit' | 'offset' | 'search' | 'sortBy' | 'sortDir', string>,
   defaultInitialState: ServerTableState,
 ) => {
   const limit = params.get(qsParamNames.limit);
@@ -80,14 +77,8 @@ const parseParams = (
   const sortBy = params.get(qsParamNames.sortBy);
   const sortDir = params.get(qsParamNames.sortDir);
   return {
-    limit:
-      typeof limit !== 'string'
-        ? defaultInitialState.limit
-        : Number.parseInt(limit, 10),
-    offset:
-      typeof offset !== 'string'
-        ? defaultInitialState.offset
-        : Number.parseInt(offset, 10),
+    limit: typeof limit !== 'string' ? defaultInitialState.limit : Number.parseInt(limit, 10),
+    offset: typeof offset !== 'string' ? defaultInitialState.offset : Number.parseInt(offset, 10),
     ...((typeof search === 'string' || !!defaultInitialState.search) && {
       search: search || defaultInitialState.search,
     }),
@@ -115,25 +106,13 @@ const getNextState = (currentState: SortDirection | null) => {
   }
 };
 
-export function useServerTable(
-  _options: UseServerTableOptions = {},
-): UseServerTableReturn {
+export function useServerTable(_options: UseServerTableOptions = {}): UseServerTableReturn {
   const qsParamNames = {
-    limit: _options.urlParamPrefix
-      ? `${_options.urlParamPrefix}limit`
-      : 'limit',
-    offset: _options.urlParamPrefix
-      ? `${_options.urlParamPrefix}offset`
-      : 'offset',
-    search: _options.urlParamPrefix
-      ? `${_options.urlParamPrefix}search`
-      : 'search',
-    sortBy: _options.urlParamPrefix
-      ? `${_options.urlParamPrefix}sortBy`
-      : 'sortBy',
-    sortDir: _options.urlParamPrefix
-      ? `${_options.urlParamPrefix}sortDir`
-      : 'sortDir',
+    limit: _options.urlParamPrefix ? `${_options.urlParamPrefix}limit` : 'limit',
+    offset: _options.urlParamPrefix ? `${_options.urlParamPrefix}offset` : 'offset',
+    search: _options.urlParamPrefix ? `${_options.urlParamPrefix}search` : 'search',
+    sortBy: _options.urlParamPrefix ? `${_options.urlParamPrefix}sortBy` : 'sortBy',
+    sortDir: _options.urlParamPrefix ? `${_options.urlParamPrefix}sortDir` : 'sortDir',
   };
   const defaultInitialState = {
     limit: _options.defaultLimit ?? 20,
@@ -144,11 +123,7 @@ export function useServerTable(
   } satisfies ServerTableState;
 
   const urlSearchParams = new URLSearchParams(location.search);
-  const initialQsParams = parseParams(
-    urlSearchParams,
-    qsParamNames,
-    defaultInitialState,
-  );
+  const initialQsParams = parseParams(urlSearchParams, qsParamNames, defaultInitialState);
 
   const qsParamsInitialState = {
     limit: initialQsParams.limit,
@@ -182,9 +157,7 @@ export function useServerTable(
   );
 
   const pageCount =
-    state.total.type === 'items'
-      ? Math.ceil(state.total.value / state.limit)
-      : state.total.value;
+    state.total.type === 'items' ? Math.ceil(state.total.value / state.limit) : state.total.value;
   const pageIndex = Math.ceil(state.offset / state.limit + 1);
   const canNextPage = pageCount > pageIndex;
   const canPreviousPage = pageIndex > 1;
@@ -273,13 +246,7 @@ export function useServerTable(
       search: state.search,
       sort: state.sort,
     });
-  }, [
-    state.offset,
-    state.limit,
-    state.search,
-    state.sort,
-    _options.onStateChange,
-  ]);
+  }, [state.offset, state.limit, state.search, state.sort, _options.onStateChange]);
 
   return {
     setOffset,
